@@ -9,49 +9,73 @@ part 'prayer_times_state.dart';
 
 class PrayerTimesCubit extends Cubit<PrayerTimesState> {
   final PrayerTimesRepo prayerTimesRepo;
-  final NotificationService notificationService;
 
-  PrayerTimesCubit(this.prayerTimesRepo, this.notificationService)
-      : super(PrayerTimesInitial());
+  PrayerTimesCubit(this.prayerTimesRepo) : super(PrayerTimesInitial());
 
   Future<void> fetchPrayerTimes() async {
     emit(PrayerTimesLoading());
-    var result = await prayerTimesRepo.getPrayerTimes();
-    result.fold((fail) {
-      debugPrint("error while get prayer times ${fail.message}");
-      emit(PrayerTimesFailure(fail.message));
-    }, (success) {
-      scheduleNotifications(success);
-      emit(PrayerTimesSuccess(success));
-    });
-  }
+    final result = await prayerTimesRepo.getPrayerTimes();
 
-  void scheduleNotifications(PrayerTimesModel prayerTimes) {
-    final mainPrayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
-
-    prayerTimes.data!.timings!
-        .toJson()
-        .entries
-        .where((e) => mainPrayers.contains(e.key))
-        .forEach((e) {
-      final dateTime = _convertTimeToDateTime(e.value);
-      notificationService.schedulePrayerNotification(dateTime, e.key);
-    });
-  }
-
-  DateTime _convertTimeToDateTime(String time) {
-    final now = DateTime.now();
-    final parts = time.split(':');
-    return DateTime(
-      now.year,
-      now.month,
-      now.day,
-      int.parse(parts[0]),
-      int.parse(parts[1]),
+    result.fold(
+      (fail) {
+        debugPrint("Error fetching prayer times: ${fail.message}");
+        emit(PrayerTimesFailure(fail.message));
+      },
+      (success) {
+        scheduleNotifications(success);
+        emit(PrayerTimesSuccess(success));
+      },
     );
   }
 
-  void playAdhan() {
-    notificationService.playAdhan();
+  void scheduleNotifications(PrayerTimesModel prayerTimes) {
+    try {
+      final mainPrayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+
+      prayerTimes.data!.timings!
+          .toJson()
+          .entries
+          .where((e) => mainPrayers.contains(e.key))
+          .forEach((e) {
+        final dateTime = _convertTimeToDateTime(e.value);
+        NotificationService.schedulePrayerNotification(dateTime, e.key);
+      });
+    } catch (e) {
+      debugPrint('Error scheduling notifications: $e');
+    }
+  }
+
+  DateTime _convertTimeToDateTime(String time) {
+    try {
+      final now = DateTime.now();
+      final cleanTime = time.replaceAll('AM', '').replaceAll('PM', '').trim();
+      final parts = cleanTime.split(':');
+
+      int hour = int.parse(parts[0]);
+      final minute = int.parse(parts[1]);
+
+      if (time.contains('PM') && hour != 12) {
+        hour += 12;
+      }
+      if (time.contains('AM') && hour == 12) {
+        hour = 0;
+      }
+
+      return DateTime(now.year, now.month, now.day, hour, minute);
+    } catch (e) {
+      debugPrint('Error converting time: $e');
+      return DateTime.now().add(const Duration(minutes: 1));
+    }
+  }
+
+  Future<void> playAdhan() async {
+    await NotificationService.playAdhan();
+  }
+
+  Future<void> scheduleTestNotification() async {
+    await NotificationService.schedulePrayerNotification(
+      DateTime.now().add(const Duration(minutes: 1)),
+      'افتراضية',
+    );
   }
 }
